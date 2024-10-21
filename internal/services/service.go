@@ -7,12 +7,15 @@ import (
 	"time"
 
 	"github.com/krzko/oteldemo/internal/config"
+	"github.com/krzko/oteldemo/internal/metrics"
 	"github.com/krzko/oteldemo/internal/telemetry"
 	"github.com/krzko/oteldemo/pkg/data"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
@@ -26,6 +29,7 @@ type Service interface {
 type BaseService struct {
 	Name      string
 	Tracer    trace.Tracer
+	Meter     metric.Meter
 	Provider  *sdktrace.TracerProvider
 	Generator *data.Generator
 	Logger    *slog.Logger
@@ -33,7 +37,7 @@ type BaseService struct {
 }
 
 func NewService(name string, cfg *config.Config) (Service, error) {
-	tp, err := telemetry.NewProvider(name, cfg.Endpoint, cfg.Secure, cfg.Protocol, cfg.Headers)
+	tp, mp, err := telemetry.NewProvider(name, cfg.Endpoint, cfg.Secure, cfg.Protocol, cfg.Headers)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +45,7 @@ func NewService(name string, cfg *config.Config) (Service, error) {
 	return &BaseService{
 		Name:      name,
 		Tracer:    tp.Tracer(name),
+		Meter:     mp.Meter(name),
 		Provider:  tp,
 		Generator: data.NewGenerator(),
 		Logger:    cfg.Logger.With("service", name),
@@ -65,6 +70,27 @@ func (s *BaseService) Simulate(ctx context.Context) {
 }
 
 func (s *BaseService) simulateChirperRequest(ctx context.Context) {
+	start := time.Now()
+	defer func() {
+		duration := float64(time.Since(start).Milliseconds())
+
+		// Create and record histogram metric
+		histogramConfig := metrics.HistogramConfig{
+			Name:        s.Name + ".request_duration",
+			Description: "Distribution of request durations",
+			Unit:        "ms",
+			Attributes:  []attribute.KeyValue{attribute.String("service", s.Name)},
+			Bounds:      []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000},
+		}
+
+		histogram, err := metrics.RegisterHistogram(s.Meter, histogramConfig)
+		if err != nil {
+			s.Logger.Error("Failed to register histogram", "error", err)
+		} else {
+			histogram.Record(ctx, duration, metric.WithAttributes(attribute.String("service", s.Name)))
+		}
+	}()
+
 	clientType := "web"
 	if s.Generator.GenerateFloat32() < 0.3 {
 		clientType = "mobile"
@@ -96,6 +122,38 @@ func (s *BaseService) simulateChirperRequest(ctx context.Context) {
 		clientSpan.SetAttributes(attribute.String(k, v))
 	}
 
+	// Create and record sum metric for total requests
+	totalRequestsConfig := metrics.SumConfig{
+		Name:        s.Name + ".total_requests",
+		Description: "Total number of requests",
+		Unit:        "{requests}",
+		Attributes:  []attribute.KeyValue{attribute.String("service", s.Name)},
+		IsMonotonic: true,
+	}
+
+	totalRequestsCounter, err := metrics.RegisterSum(s.Meter, totalRequestsConfig)
+	if err != nil {
+		s.Logger.Error("Failed to register total requests sum", "error", err)
+	} else {
+		metrics.RecordSum(ctx, totalRequestsCounter, 1)
+	}
+
+	// Add gauge metric
+	gaugeConfig := metrics.GaugeConfig{
+		Name:        s.Name + ".active_requests",
+		Description: "Number of active requests",
+		Unit:        "{requests}",
+		Attributes:  []attribute.KeyValue{attribute.String("service", s.Name)},
+		Min:         0,
+		Max:         100,
+		Temporality: metricdata.CumulativeTemporality,
+	}
+
+	_, err = metrics.RegisterGauge(s.Meter, gaugeConfig)
+	if err != nil {
+		s.Logger.Error("Failed to register gauge", "error", err)
+	}
+
 	time.Sleep(s.Generator.GenerateLatency(10, 50))
 
 	clientSpan.AddEvent("request_started", trace.WithAttributes(
@@ -117,20 +175,89 @@ func (s *BaseService) simulateChirperRequest(ctx context.Context) {
 
 	if statusCode >= 400 {
 		clientSpan.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", statusCode))
+
+		// Create and record sum metric for total errors
+		totalErrorsConfig := metrics.SumConfig{
+			Name:        s.Name + ".total_errors",
+			Description: "Total number of errors",
+			Unit:        "{errors}",
+			Attributes:  []attribute.KeyValue{attribute.String("service", s.Name)},
+			IsMonotonic: true,
+		}
+
+		totalErrorsCounter, err := metrics.RegisterSum(s.Meter, totalErrorsConfig)
+		if err != nil {
+			s.Logger.Error("Failed to register total errors sum", "error", err)
+		} else {
+			metrics.RecordSum(ctx, totalErrorsCounter, 1)
+		}
 	} else {
 		clientSpan.SetStatus(codes.Ok, "")
 	}
 }
 
 func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, path string) context.Context {
-	gatewayTP, err := telemetry.NewProvider("chirper.api.gateway", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
+	start := time.Now()
+	gatewayTP, gatewayMP, err := telemetry.NewProvider("chirper.api.gateway", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
 	if err != nil {
-		s.Logger.Error("Failed to create trace provider for API Gateway", "error", err)
+		s.Logger.Error("Failed to create providers for API Gateway", "error", err)
 		return ctx
 	}
 	defer gatewayTP.Shutdown(context.Background())
 
 	gatewayTracer := gatewayTP.Tracer("chirper.api.gateway")
+	gatewayMeter := gatewayMP.Meter("chirper.api.gateway")
+
+	defer func() {
+		duration := float64(time.Since(start).Milliseconds())
+
+		histogramConfig := metrics.HistogramConfig{
+			Name:        "chirper.api.gateway.request_duration",
+			Description: "Distribution of API Gateway request durations",
+			Unit:        "ms",
+			Attributes:  []attribute.KeyValue{attribute.String("service", "chirper.api.gateway")},
+			Bounds:      []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000},
+		}
+
+		histogram, err := metrics.RegisterHistogram(gatewayMeter, histogramConfig)
+		if err != nil {
+			s.Logger.Error("Failed to register API Gateway histogram", "error", err)
+		} else {
+			histogram.Record(ctx, duration, metric.WithAttributes(attribute.String("method", method), attribute.String("path", path)))
+		}
+	}()
+
+	// Create and record sum metric for API Gateway requests
+	gatewayRequestsConfig := metrics.SumConfig{
+		Name:        "chirper.api.gateway.total_requests",
+		Description: "Total number of API Gateway requests",
+		Unit:        "{requests}",
+		Attributes:  []attribute.KeyValue{attribute.String("service", "chirper.api.gateway")},
+		IsMonotonic: true,
+	}
+
+	gatewayRequestsCounter, err := metrics.RegisterSum(gatewayMeter, gatewayRequestsConfig)
+	if err != nil {
+		s.Logger.Error("Failed to register API Gateway requests sum", "error", err)
+	} else {
+		metrics.RecordSum(ctx, gatewayRequestsCounter, 1, attribute.String("method", method), attribute.String("path", path))
+	}
+
+	// Add a gauge metric for active gateway requests
+	activeRequests, err := gatewayMeter.Float64ObservableGauge("active_gateway_requests",
+		metric.WithDescription("Number of active requests in the API gateway"),
+		metric.WithUnit("{requests}"))
+	if err != nil {
+		s.Logger.Error("Failed to create active requests gauge", "error", err)
+	}
+
+	_, err = gatewayMeter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		o.ObserveFloat64(activeRequests, float64(s.Generator.GenerateInt(100)))
+		return nil
+	}, activeRequests)
+	if err != nil {
+		s.Logger.Error("Failed to register callback for active requests gauge", "error", err)
+	}
 
 	gatewayCtx, gatewaySpan := gatewayTracer.Start(ctx, "handle_request",
 		trace.WithAttributes(
@@ -186,14 +313,31 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 
 	serviceCtx := propagator.Extract(context.Background(), carrier)
 
-	serviceTP, err := telemetry.NewProvider(serviceName, s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
+	serviceTP, serviceMP, err := telemetry.NewProvider(serviceName, s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
 	if err != nil {
-		s.Logger.Error("Failed to create trace provider for service", "service", serviceName, "error", err)
+		s.Logger.Error("Failed to create providers for service", "service", serviceName, "error", err)
 		return ctx
 	}
 	defer serviceTP.Shutdown(context.Background())
 
 	serviceTracer := serviceTP.Tracer(serviceName)
+	serviceMeter := serviceMP.Meter(serviceName)
+
+	// Add a gauge metric for service operations
+	operationCounter, err := serviceMeter.Float64ObservableGauge("service_operations",
+		metric.WithDescription("Number of operations performed by the service"),
+		metric.WithUnit("{operations}"))
+	if err != nil {
+		s.Logger.Error("Failed to create service operations gauge", "error", err)
+	}
+
+	_, err = serviceMeter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		o.ObserveFloat64(operationCounter, float64(s.Generator.GenerateInt(50)))
+		return nil
+	}, operationCounter)
+	if err != nil {
+		s.Logger.Error("Failed to register callback for service operations gauge", "error", err)
+	}
 
 	serviceCtx, serviceSpan := serviceTracer.Start(serviceCtx, serviceName+"_operation",
 		trace.WithAttributes(
@@ -248,14 +392,31 @@ func (s *BaseService) simulateBackendOperations(ctx context.Context, tracer trac
 }
 
 func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID string) context.Context {
-	eventTP, err := telemetry.NewProvider("chirper.event.service", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
+	eventTP, eventMP, err := telemetry.NewProvider("chirper.event.service", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
 	if err != nil {
-		s.Logger.Error("Failed to create trace provider for event service", "error", err)
+		s.Logger.Error("Failed to create providers for event service", "error", err)
 		return ctx
 	}
 	defer eventTP.Shutdown(context.Background())
 
 	eventTracer := eventTP.Tracer("chirper.event.service")
+	eventMeter := eventMP.Meter("chirper.event.service")
+
+	// Add a gauge metric for cloud events
+	eventCounter, err := eventMeter.Float64ObservableGauge("cloud_events",
+		metric.WithDescription("Number of cloud events processed"),
+		metric.WithUnit("{events}"))
+	if err != nil {
+		s.Logger.Error("Failed to create cloud events gauge", "error", err)
+	}
+
+	_, err = eventMeter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		o.ObserveFloat64(eventCounter, float64(s.Generator.GenerateInt(20)))
+		return nil
+	}, eventCounter)
+	if err != nil {
+		s.Logger.Error("Failed to register callback for cloud events gauge", "error", err)
+	}
 
 	eventCtx, eventSpan := eventTracer.Start(ctx, "process_cloud_event",
 		trace.WithAttributes(

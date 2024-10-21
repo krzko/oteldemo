@@ -54,7 +54,7 @@ OTelDemo highlights key OpenTelemetry features:
 ### brew
 
 ```bash
-brew install oteldemo
+brew install krzko/tap/oteldemo
 ```
 
 ## Use Cases
