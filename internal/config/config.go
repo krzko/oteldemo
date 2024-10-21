@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"log"
 	"log/slog"
 	"os"
 	"strings"
@@ -16,6 +17,7 @@ type Config struct {
 	Protocol    string
 	ServiceList []string
 	Logger      *slog.Logger
+	OtelLogger  log.Logger
 	Environment string
 }
 
