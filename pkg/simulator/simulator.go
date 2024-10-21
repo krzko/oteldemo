@@ -8,29 +8,52 @@ import (
 
 	"github.com/krzko/oteldemo/internal/config"
 	"github.com/krzko/oteldemo/internal/services"
-	"go.opentelemetry.io/otel"
+	"github.com/krzko/oteldemo/internal/telemetry"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type Simulator struct {
-	services []services.Service
-	logger   *slog.Logger
-	tracer   trace.Tracer
+	services   []services.Service
+	logger     *slog.Logger
+	otelLogger log.Logger
+	tracer     trace.Tracer
 }
 
 func New(cfg *config.Config) (*Simulator, error) {
-	sim := &Simulator{
-		logger: cfg.Logger.With("component", "simulator"),
-		tracer: otel.Tracer("simulator"),
+	// Create a new provider for the simulator
+	tp, _, lp, err := telemetry.NewProvider("simulator", cfg.Endpoint, cfg.Secure, cfg.Protocol, cfg.Headers)
+	if err != nil {
+		return nil, err
 	}
+
+	// Get the logger from the LoggerProvider
+	otelLogger := lp.Logger("simulator")
+
+	sim := &Simulator{
+		logger:     cfg.Logger.With("component", "simulator"),
+		otelLogger: otelLogger,
+		tracer:     tp.Tracer("simulator"),
+	}
+
+	// Need to get a context for the initial setup logging
+	ctx := context.Background()
+
 	for _, serviceName := range cfg.ServiceList {
 		service, err := services.NewService(serviceName, cfg)
 		if err != nil {
 			sim.logger.Error("Failed to create service", "service", serviceName, "error", err)
+			sim.otelLogger.Emit(ctx, telemetry.CreateLogRecord(
+				telemetry.SeverityError,
+				"Failed to create service",
+				log.String("service", serviceName),
+				log.String("error", err.Error()),
+			))
 			return nil, err
 		}
 		sim.services = append(sim.services, service)
 	}
+
 	return sim, nil
 }
 

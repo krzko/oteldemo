@@ -2,12 +2,12 @@ package config
 
 import (
 	"flag"
-	"log"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/otel/log"
 )
 
 type Config struct {

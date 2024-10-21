@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -27,29 +28,34 @@ type Service interface {
 }
 
 type BaseService struct {
-	Name      string
-	Tracer    trace.Tracer
-	Meter     metric.Meter
-	Provider  *sdktrace.TracerProvider
-	Generator *data.Generator
-	Logger    *slog.Logger
-	cfg       *config.Config
+	Name       string
+	Tracer     trace.Tracer
+	Meter      metric.Meter
+	Provider   *sdktrace.TracerProvider
+	Generator  *data.Generator
+	Logger     *slog.Logger
+	OtelLogger log.Logger
+	cfg        *config.Config
 }
 
 func NewService(name string, cfg *config.Config) (Service, error) {
-	tp, mp, err := telemetry.NewProvider(name, cfg.Endpoint, cfg.Secure, cfg.Protocol, cfg.Headers)
+	tp, mp, lp, err := telemetry.NewProvider(name, cfg.Endpoint, cfg.Secure, cfg.Protocol, cfg.Headers)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create a logger from the LoggerProvider
+	otelLogger := lp.Logger(name)
+
 	return &BaseService{
-		Name:      name,
-		Tracer:    tp.Tracer(name),
-		Meter:     mp.Meter(name),
-		Provider:  tp,
-		Generator: data.NewGenerator(),
-		Logger:    cfg.Logger.With("service", name),
-		cfg:       cfg,
+		Name:       name,
+		Tracer:     tp.Tracer(name),
+		Meter:      mp.Meter(name),
+		Provider:   tp,
+		Generator:  data.NewGenerator(),
+		Logger:     cfg.Logger.With("service", name),
+		OtelLogger: otelLogger,
+		cfg:        cfg,
 	}, nil
 }
 
@@ -198,7 +204,7 @@ func (s *BaseService) simulateChirperRequest(ctx context.Context) {
 
 func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, path string) context.Context {
 	start := time.Now()
-	gatewayTP, gatewayMP, err := telemetry.NewProvider("chirper.api.gateway", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
+	gatewayTP, gatewayMP, gatewayLP, err := telemetry.NewProvider("chirper.api.gateway", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
 	if err != nil {
 		s.Logger.Error("Failed to create providers for API Gateway", "error", err)
 		return ctx
@@ -207,6 +213,15 @@ func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, pa
 
 	gatewayTracer := gatewayTP.Tracer("chirper.api.gateway")
 	gatewayMeter := gatewayMP.Meter("chirper.api.gateway")
+	gatewayLogger := gatewayLP.Logger("chirper.api.gateway")
+
+	gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
+		telemetry.SeverityInfo,
+		"API Gateway request started",
+		log.String("user_id", userID),
+		log.String("method", method),
+		log.String("path", path),
+	))
 
 	defer func() {
 		duration := float64(time.Since(start).Milliseconds())
@@ -222,10 +237,23 @@ func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, pa
 		histogram, err := metrics.RegisterHistogram(gatewayMeter, histogramConfig)
 		if err != nil {
 			s.Logger.Error("Failed to register API Gateway histogram", "error", err)
+			gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
+				telemetry.SeverityError,
+				"Failed to register API Gateway histogram",
+				log.String("error", err.Error()),
+			))
 		} else {
 			histogram.Record(ctx, duration, metric.WithAttributes(attribute.String("method", method), attribute.String("path", path)))
 		}
 	}()
+
+	if err != nil {
+		gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityError,
+			"Failed to create providers for API Gateway",
+			log.String("error", err.Error()),
+		))
+	}
 
 	// Create and record sum metric for API Gateway requests
 	gatewayRequestsConfig := metrics.SumConfig{
@@ -249,6 +277,11 @@ func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, pa
 		metric.WithUnit("{requests}"))
 	if err != nil {
 		s.Logger.Error("Failed to create active requests gauge", "error", err)
+		gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityError,
+			"Failed to create active requests gauge",
+			log.String("error", err.Error()),
+		))
 	}
 
 	_, err = gatewayMeter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
@@ -294,9 +327,18 @@ func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, pa
 	gatewaySpan.SetAttributes(semconv.HTTPResponseStatusCode(statusCode))
 
 	if statusCode >= 400 {
-		gatewaySpan.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", statusCode))
+		gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityError,
+			"API Gateway request failed",
+			log.Int("status_code", statusCode),
+			log.String("error", fmt.Sprintf("HTTP %d", statusCode)),
+		))
 	} else {
-		gatewaySpan.SetStatus(codes.Ok, "")
+		gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityInfo,
+			"API Gateway request completed successfully",
+			log.Int("status_code", statusCode),
+		))
 	}
 
 	return gatewayCtx
@@ -313,7 +355,7 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 
 	serviceCtx := propagator.Extract(context.Background(), carrier)
 
-	serviceTP, serviceMP, err := telemetry.NewProvider(serviceName, s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
+	serviceTP, serviceMP, serviceLP, err := telemetry.NewProvider(serviceName, s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
 	if err != nil {
 		s.Logger.Error("Failed to create providers for service", "service", serviceName, "error", err)
 		return ctx
@@ -322,6 +364,7 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 
 	serviceTracer := serviceTP.Tracer(serviceName)
 	serviceMeter := serviceMP.Meter(serviceName)
+	serviceLogger := serviceLP.Logger(serviceName)
 
 	// Add a gauge metric for service operations
 	operationCounter, err := serviceMeter.Float64ObservableGauge("service_operations",
@@ -329,6 +372,11 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 		metric.WithUnit("{operations}"))
 	if err != nil {
 		s.Logger.Error("Failed to create service operations gauge", "error", err)
+		serviceLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityError,
+			"Failed to create service operations gauge",
+			log.String("error", err.Error()),
+		))
 	}
 
 	_, err = serviceMeter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
@@ -349,6 +397,16 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 	defer serviceSpan.End()
 
 	s.Logger.Info("Service call", "depth", depth, "from", parentServiceName, "to", serviceName)
+
+	serviceLogger.Emit(ctx, telemetry.CreateLogRecord(
+		telemetry.SeverityInfo,
+		"Service call started",
+		log.Int("depth", depth),
+		log.String("from", parentServiceName),
+		log.String("to", serviceName),
+		log.String("action", action),
+		log.String("user_id", userID),
+	))
 
 	serviceSpan.AddEvent("service_operation_started", trace.WithAttributes(
 		attribute.String("action", action),
@@ -377,8 +435,20 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 	time.Sleep(latency)
 
 	if s.Generator.GenerateFloat32() < 0.05 {
+		serviceLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityError,
+			"Service error occurred",
+			log.String("service", serviceName),
+			log.String("action", action),
+		))
 		serviceSpan.SetStatus(codes.Error, "Service error occurred")
 	} else {
+		serviceLogger.Emit(ctx, telemetry.CreateLogRecord(
+			telemetry.SeverityInfo,
+			"Service call completed successfully",
+			log.String("service", serviceName),
+			log.String("action", action),
+		))
 		serviceSpan.SetStatus(codes.Ok, "")
 	}
 
@@ -392,7 +462,7 @@ func (s *BaseService) simulateBackendOperations(ctx context.Context, tracer trac
 }
 
 func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID string) context.Context {
-	eventTP, eventMP, err := telemetry.NewProvider("chirper.event.service", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
+	eventTP, eventMP, eventLP, err := telemetry.NewProvider("chirper.event.service", s.cfg.Endpoint, s.cfg.Secure, s.cfg.Protocol, s.cfg.Headers)
 	if err != nil {
 		s.Logger.Error("Failed to create providers for event service", "error", err)
 		return ctx
@@ -401,6 +471,7 @@ func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID str
 
 	eventTracer := eventTP.Tracer("chirper.event.service")
 	eventMeter := eventMP.Meter("chirper.event.service")
+	eventLogger := eventLP.Logger("chirper.event.service")
 
 	// Add a gauge metric for cloud events
 	eventCounter, err := eventMeter.Float64ObservableGauge("cloud_events",
@@ -426,6 +497,13 @@ func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID str
 		))
 	defer eventSpan.End()
 
+	eventLogger.Emit(ctx, telemetry.CreateLogRecord(
+		telemetry.SeverityInfo,
+		"Cloud event processing started",
+		log.String("event_type", s.getEventType(action)),
+		log.String("user_id", userID),
+	))
+
 	eventSpan.AddEvent("cloud_event_received", trace.WithAttributes(
 		attribute.String("event.type", s.getEventType(action)),
 		attribute.String("user.id", userID),
@@ -436,6 +514,13 @@ func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID str
 	eventSpan.AddEvent("cloud_event_processed", trace.WithAttributes(
 		attribute.String("event.type", s.getEventType(action)),
 		attribute.String("user.id", userID),
+	))
+
+	eventLogger.Emit(ctx, telemetry.CreateLogRecord(
+		telemetry.SeverityInfo,
+		"Cloud event processed successfully",
+		log.String("event_type", s.getEventType(action)),
+		log.String("user_id", userID),
 	))
 
 	return eventCtx
