@@ -1,5 +1,6 @@
 ### Custom ###
 oteldemo
+bin
 
 # goreleaser
 dist/
