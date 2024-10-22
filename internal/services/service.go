@@ -247,14 +247,6 @@ func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, pa
 		}
 	}()
 
-	if err != nil {
-		gatewayLogger.Emit(ctx, telemetry.CreateLogRecord(
-			telemetry.SeverityError,
-			"Failed to create providers for API Gateway",
-			log.String("error", err.Error()),
-		))
-	}
-
 	// Create and record sum metric for API Gateway requests
 	gatewayRequestsConfig := metrics.SumConfig{
 		Name:        "chirper.api.gateway.total_requests",
