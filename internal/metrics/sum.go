@@ -5,6 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type SumConfig struct {
@@ -28,6 +29,18 @@ func RegisterSum(meter metric.Meter, sc SumConfig) (metric.Int64Counter, error) 
 	return counter, nil
 }
 
-func RecordSum(ctx context.Context, counter metric.Int64Counter, value int64, attributes ...attribute.KeyValue) {
-	counter.Add(ctx, value, metric.WithAttributes(attributes...))
+func RecordSum(ctx context.Context, counter metric.Int64Counter, value int64, attrs ...attribute.KeyValue) {
+	opts := []metric.AddOption{metric.WithAttributes(attrs...)}
+
+	// Add exemplar if there's an active span in the context
+	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
+		traceID := span.SpanContext().TraceID().String()
+		spanID := span.SpanContext().SpanID().String()
+		opts = append(opts, metric.WithAttributes(
+			attribute.String("trace_id", traceID),
+			attribute.String("span_id", spanID),
+		))
+	}
+
+	counter.Add(ctx, value, opts...)
 }

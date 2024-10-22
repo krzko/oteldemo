@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type GaugeConfig struct {
@@ -31,9 +32,21 @@ func RegisterGauge(meter metric.Meter, gc GaugeConfig) (metric.Float64Observable
 		return nil, err
 	}
 
-	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
 		value := generateGaugeValue(gc.Min, gc.Max)
-		o.ObserveFloat64(gauge, value, metric.WithAttributes(gc.Attributes...))
+		attrs := gc.Attributes
+
+		// Add trace context if available
+		if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
+			traceID := span.SpanContext().TraceID().String()
+			spanID := span.SpanContext().SpanID().String()
+			attrs = append(attrs,
+				attribute.String("trace_id", traceID),
+				attribute.String("span_id", spanID),
+			)
+		}
+
+		o.ObserveFloat64(gauge, value, metric.WithAttributes(attrs...))
 		return nil
 	}, gauge)
 
