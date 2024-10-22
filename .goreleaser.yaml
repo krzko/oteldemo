@@ -1,0 +1,52 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - main: ./cmd/oteldemo
+    binary: oteldemo
+    env: [CGO_ENABLED=0]
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    format_overrides:
+    - goos: windows
+      format: zip
+    wrap_in_directory: true
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
+    - Merge pull request
+    - Merge branch
+
+brews:
+  - name: oteldemo
+    repository:
+      owner: 'krzko'
+      name: 'homebrew-tap'
+    homepage: https://github.com/krzko/oteldemo
+    description: "OpenTelemetry Demo Generator."
+    install: |
+      bin.install "oteldemo"
+    test: |
+      system "#{bin}/oteldemo -v"

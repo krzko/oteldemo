@@ -1,10 +1,8 @@
 # oteldemo
 
-## Overview
-
 `oteldemo` is a tool designed to demonstrate OpenTelemetry in action.
 
-It simulates a social media application called "Chirper", generating synthetic telemetry data to showcase how OpenTelemetry can provide insights into complex, distributed systems.
+It simulates a social media application called "Chirper", generating synthetic telemetry data to showcase how OpenTelemetry can provide insights into complex, distributed systems in a simple, single binary.
 
 ## Features
 
@@ -14,8 +12,6 @@ It simulates a social media application called "Chirper", generating synthetic t
   - **Tracing**: Generates distributed traces showing request flows.
   - **Metrics**: Produces application and system metrics.
   - **Logging**: Creates structured logs integrated with traces and metrics.
-- **Configurable**: Allows customization of service behaviors, error rates, and latencies.
-- **Cloud-Native Compatible**: Designed to work with modern observability backends.
 
 ## Configuration
 

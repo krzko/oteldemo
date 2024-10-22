@@ -19,6 +19,10 @@ type Config struct {
 	Logger      *slog.Logger
 	OtelLogger  log.Logger
 	Environment string
+	Version     string
+	Commit      string
+	BuildDate   string
+	ShowVersion bool
 }
 
 func Parse() *Config {
@@ -28,6 +32,9 @@ func Parse() *Config {
 		ServiceList: make([]string, 0, 20),
 		Headers:     make(map[string]string),
 	}
+
+	flag.BoolVar(&cfg.ShowVersion, "version", false, "Display version information")
+	flag.BoolVar(&cfg.ShowVersion, "v", false, "Display version information (shorthand)")
 
 	flag.StringVar(&cfg.Endpoint, "endpoint", getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318"), "OpenTelemetry collector endpoint")
 	flag.BoolVar(&cfg.Secure, "secure", getEnvBool("OTEL_EXPORTER_OTLP_SECURE", false), "Use secure connection")
