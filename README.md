@@ -13,15 +13,50 @@ It simulates a social media application called "Chirper", generating synthetic t
   - **Metrics**: Produces application and system metrics.
   - **Logging**: Creates structured logs integrated with traces and metrics.
 
+## Getting Started
+
+Install `oteldemo` using `brew or download the binary from the [releases page](https://github.com/krzko/oteldemo/releases), you can also run it with `docker`:
+
+### Install using brew
+
+```bash
+brew install krzko/tap/oteldemo
+```
+
+### Run it with Docker
+
+```bash
+docker run -it ghcr.io/krzko/oteldemo:latest
+```
+### Run
+
+Run the `oteldemo` binary with the desired configuration:
+
+```bash
+# Local collector with HTTP:
+oteldemo -endpoint="localhost:4318" -protocol="http" -secure="false"
+
+# Remote collector with gRPC and authentication:
+oteldemo -endpoint="api.domain.tld:443" -headers="x-api-key=xxx,x-team=xxx" -protocol="grpc" -secure="true"
+
+# Using environment variables:
+export OTEL_EXPORTER_OTLP_ENDPOINT="localhost:4318"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http"
+oteldemo
+```
+
 ## Configuration
 
-Configuration can be provided through environment variables or command-line flags. The following options are available:
+Flags can be set via command line or environment variables. Command line flags take precedence over environment variables.
 
-`OTEL_EXPORTER_OTLP_ENDPOINT`: OpenTelemetry collector endpoint (default: localhost:4318)
-`OTEL_EXPORTER_OTLP_SECURE`: Use secure connection (default: false)
-`OTEL_EXPORTER_OTLP_PROTOCOL`: Protocol to use (grpc or http, default: http)
-`APP_ENV`: Application environment (default: development)
-`OTEL_EXPORTER_OTLP_HEADERS`: Headers as key=value pairs, comma-separated
+| Flag | Env | Description | Default |
+|------|-----|-------------|---------|
+| `-endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry collector endpoint | `localhost:4318` |
+| `-protocol` | `OTEL_EXPORTER_OTLP_PROTOCOL` | Protocol to use (grpc or http) | `http` |
+| `-secure` | `OTEL_EXPORTER_OTLP_SECURE` | Use secure connection | `false` |
+| `-headers` | `OTEL_EXPORTER_OTLP_HEADERS` | Headers as key=value pairs, comma-separated | |
+| `-env` | `APP_ENV` | Application environment | `development` |
+| `-v`, `-version` |  | Application version | |
 
 ## OpenTelemetry Showcase
 
@@ -44,14 +79,6 @@ OTelDemo highlights key OpenTelemetry features:
 - Structured logging with trace correlation
 - Log-injected trace IDs for easy correlation
 - Various log severity levels
-
-## Getting Started
-
-### brew
-
-```bash
-brew install krzko/tap/oteldemo
-```
 
 ## Use Cases
 
