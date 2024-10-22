@@ -209,7 +209,12 @@ func (s *BaseService) simulateAPIGateway(ctx context.Context, userID, method, pa
 		s.Logger.Error("Failed to create providers for API Gateway", "error", err)
 		return ctx
 	}
-	defer gatewayTP.Shutdown(context.Background())
+
+	defer func() {
+		if err := gatewayTP.Shutdown(context.Background()); err != nil {
+			s.Logger.Error("Failed to shutdown API Gateway provider", "error", err)
+		}
+	}()
 
 	gatewayTracer := gatewayTP.Tracer("chirper.api.gateway")
 	gatewayMeter := gatewayMP.Meter("chirper.api.gateway")
@@ -352,7 +357,12 @@ func (s *BaseService) nestedServiceCall(ctx context.Context, parentServiceName, 
 		s.Logger.Error("Failed to create providers for service", "service", serviceName, "error", err)
 		return ctx
 	}
-	defer serviceTP.Shutdown(context.Background())
+
+	defer func() {
+		if err := serviceTP.Shutdown(context.Background()); err != nil {
+			s.Logger.Error("Failed to shutdown provider for service", "service", serviceName, "error", err)
+		}
+	}()
 
 	serviceTracer := serviceTP.Tracer(serviceName)
 	serviceMeter := serviceMP.Meter(serviceName)
@@ -459,7 +469,12 @@ func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID str
 		s.Logger.Error("Failed to create providers for event service", "error", err)
 		return ctx
 	}
-	defer eventTP.Shutdown(context.Background())
+
+	defer func() {
+		if err := eventTP.Shutdown(context.Background()); err != nil {
+			s.Logger.Error("Failed to shutdown event service provider", "error", err)
+		}
+	}()
 
 	eventTracer := eventTP.Tracer("chirper.event.service")
 	eventMeter := eventMP.Meter("chirper.event.service")
@@ -519,7 +534,7 @@ func (s *BaseService) simulateCloudEvent(ctx context.Context, action, userID str
 }
 
 func (s *BaseService) simulateDatabaseOperation(ctx context.Context, tracer trace.Tracer, action string) {
-	ctx, span := tracer.Start(ctx, "database_operation",
+	_, span := tracer.Start(ctx, "database_operation",
 		trace.WithAttributes(
 			semconv.DBSystemMySQL,
 			semconv.DBNamespace("chirper_db"),
@@ -538,7 +553,7 @@ func (s *BaseService) simulateDatabaseOperation(ctx context.Context, tracer trac
 }
 
 func (s *BaseService) simulateCacheOperation(ctx context.Context, tracer trace.Tracer, action string) {
-	ctx, span := tracer.Start(ctx, "cache_operation",
+	_, span := tracer.Start(ctx, "cache_operation",
 		trace.WithAttributes(
 			attribute.String("cache.system", "redis"),
 			attribute.String("cache.operation", s.getCacheOperation(action)),
@@ -556,7 +571,7 @@ func (s *BaseService) simulateCacheOperation(ctx context.Context, tracer trace.T
 }
 
 func (s *BaseService) simulateEventPublication(ctx context.Context, tracer trace.Tracer, action string) {
-	ctx, span := tracer.Start(ctx, "event_publication",
+	_, span := tracer.Start(ctx, "event_publication",
 		trace.WithAttributes(
 			attribute.String("event.system", "kafka"),
 			attribute.String("event.type", s.getEventType(action)),
