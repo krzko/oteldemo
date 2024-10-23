@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -26,7 +27,11 @@ type Config struct {
 }
 
 func Parse() *Config {
-	godotenv.Load()
+	if err := godotenv.Load(); err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Warning: Error loading .env file: %v\n", err)
+		}
+	}
 
 	cfg := &Config{
 		ServiceList: make([]string, 0, 20),

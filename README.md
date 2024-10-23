@@ -1,17 +1,22 @@
 # oteldemo
 
-`oteldemo` is a tool designed to demonstrate OpenTelemetry in action.
+`oteldemo` is a tool designed to demonstrate OpenTelemetry in action through a lightweight, single binary approach.
 
-It simulates a social media application called "Chirper", generating synthetic telemetry data to showcase how OpenTelemetry can provide insights into complex, distributed systems in a simple, single binary.
+## About
+
+Whilst the [OpenTelemetry Demo Application (Astronomy Shop)](https://github.com/open-telemetry/opentelemetry-demo) provides a comprehensive demonstration of OpenTelemetry features, it requires significant resources to run - including Kubernetes clusters and multiple Docker containers. `oteldemo` takes a different approach by providing a single, lightweight binary that demonstrates all the key features of OpenTelemetry instrumentation signals without the operational overhead.
+
+It simulates a social media application called "Chirper", generating synthetic telemetry data to showcase how OpenTelemetry can provide insights into complex, distributed systems. The simulation creates realistic patterns of traces, metrics, and logs that you would typically see in a production microservices environment, but without the need to deploy actual services.
 
 ## Features
 
-- **Service Simulation**: Mimics a multi-tiered application including frontend, API gateway, and backend services.
-- **OpenTelemetry Integration**: Demonstrates OpenTelemetry implementation in Go applications.
+- **Lightweight**: Single binary, minimal resource requirements, no external dependencies
+- **Service Simulation**: Mimics a multi-tiered application including frontend, API gateway, and backend services
+- **OpenTelemetry Integration**: Demonstrates OpenTelemetry implementation in Go applications
 - **Multi-Signal Support**: 
-  - **Tracing**: Generates distributed traces showing request flows.
-  - **Metrics**: Produces application and system metrics.
-  - **Logging**: Creates structured logs integrated with traces and metrics.
+  - **Tracing**: Generates distributed traces showing request flows
+  - **Metrics**: Produces application and system metrics
+  - **Logging**: Creates structured logs integrated with traces and metrics
 
 ## Getting Started
 
