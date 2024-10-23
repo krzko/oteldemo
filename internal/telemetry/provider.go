@@ -274,5 +274,27 @@ func sanitizeEndpoint(endpoint string, protocol string) string {
 	// Remove any trailing slashes
 	endpoint = strings.TrimRight(endpoint, "/")
 
+	// For HTTP protocol, ensure we don't have ports typically used by gRPC
+	// and that we're not duplicating the signal paths
+	if protocol == "http" {
+		// Remove any existing signal paths
+		endpoint = strings.TrimSuffix(endpoint, httpTracesPath)
+		endpoint = strings.TrimSuffix(endpoint, httpMetricsPath)
+		endpoint = strings.TrimSuffix(endpoint, httpLogsPath)
+
+		// If port 4317 (gRPC) is specified, change to 4318 (HTTP)
+		if strings.HasSuffix(endpoint, ":4317") {
+			endpoint = strings.TrimSuffix(endpoint, ":4317") + ":4318"
+		}
+	}
+
+	// For gRPC protocol, ensure we're using the correct port
+	if protocol == "grpc" {
+		// If port 4318 (HTTP) is specified, change to 4317 (gRPC)
+		if strings.HasSuffix(endpoint, ":4318") {
+			endpoint = strings.TrimSuffix(endpoint, ":4318") + ":4317"
+		}
+	}
+
 	return endpoint
 }
