@@ -15,13 +15,25 @@ It simulates a social media application called "Chirper", generating synthetic t
 - **OpenTelemetry Integration**: Demonstrates OpenTelemetry implementation in Go applications
 - **Multi-Signal Support**: 
   - **Tracing**: Generates distributed traces showing request flows
+  <img
+  src="/assets/img/traces.png"
+  alt="Traces"
+  title="Traces"
+  style="display: inline-block; margin: 0 auto; max-width: 300px">
+
   - **Metrics**: Produces application and system metrics
+  <img
+  src="/assets/img/metrics.png"
+  alt="Metrics"
+  title="Metrics"
+  style="display: inline-block; margin: 0 auto; max-width: 300px">
+
   - **Logging**: Creates structured logs integrated with traces and metrics
-    <img
-    src="/assets/img/logs.png"
-    alt="Logs"
-    title="Logs"
-    style="display: inline-block; margin: 0 auto; max-width: 300px">
+  <img
+  src="/assets/img/logs.png"
+  alt="Logs"
+  title="Logs"
+  style="display: inline-block; margin: 0 auto; max-width: 300px">
 
 
 ## Getting Started
