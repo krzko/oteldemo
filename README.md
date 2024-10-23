@@ -31,7 +31,7 @@ brew install krzko/tap/oteldemo
 ### Run it with Docker
 
 ```bash
-docker run -it ghcr.io/krzko/oteldemo:latest -v
+docker run -it --rm ghcr.io/krzko/oteldemo:latest -v
 ```
 ### Run
 
