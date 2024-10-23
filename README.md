@@ -17,6 +17,12 @@ It simulates a social media application called "Chirper", generating synthetic t
   - **Tracing**: Generates distributed traces showing request flows
   - **Metrics**: Produces application and system metrics
   - **Logging**: Creates structured logs integrated with traces and metrics
+    <img
+    src="/assets/img/logs.png"
+    alt="Logs"
+    title="Logs"
+    style="display: inline-block; margin: 0 auto; max-width: 300px">
+
 
 ## Getting Started
 
