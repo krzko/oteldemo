@@ -2,7 +2,9 @@ package telemetry
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -20,16 +22,19 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
-	SeverityTrace = log.SeverityTrace
-	SeverityDebug = log.SeverityDebug
-	SeverityInfo  = log.SeverityInfo
-	SeverityWarn  = log.SeverityWarn
-	SeverityError = log.SeverityError
-	SeverityFatal = log.SeverityFatal
+	httpTracesPath  = "/v1/traces"
+	httpMetricsPath = "/v1/metrics"
+	httpLogsPath    = "/v1/logs"
+	SeverityTrace   = log.SeverityTrace
+	SeverityDebug   = log.SeverityDebug
+	SeverityInfo    = log.SeverityInfo
+	SeverityWarn    = log.SeverityWarn
+	SeverityError   = log.SeverityError
+	SeverityFatal   = log.SeverityFatal
 )
 
 func NewProvider(serviceName, endpoint string, secure bool, protocol string, headers map[string]string) (*sdktrace.TracerProvider, *sdkmetric.MeterProvider, *sdklog.LoggerProvider, error) {
@@ -102,29 +107,48 @@ func createTraceExporter(endpoint string, secure bool, protocol string, headers 
 }
 
 func createHTTPTraceExporter(endpoint string, secure bool, headers map[string]string) (*otlptrace.Exporter, error) {
+	endpoint = sanitizeEndpoint(endpoint, "http")
+
 	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(endpoint),
 	}
+
 	if !secure {
 		opts = append(opts, otlptracehttp.WithInsecure())
+	} else {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConfig))
 	}
+
 	if len(headers) > 0 {
 		opts = append(opts, otlptracehttp.WithHeaders(headers))
 	}
+
 	return otlptracehttp.New(context.Background(), opts...)
 }
 
 func createGRPCTraceExporter(endpoint string, secure bool, headers map[string]string) (*otlptrace.Exporter, error) {
+	endpoint = sanitizeEndpoint(endpoint, "grpc")
+
 	opts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(endpoint),
-		otlptracegrpc.WithDialOption(grpc.WithBlock()),
 	}
+
 	if !secure {
 		opts = append(opts, otlptracegrpc.WithInsecure())
+	} else {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
+
 	if len(headers) > 0 {
 		opts = append(opts, otlptracegrpc.WithHeaders(headers))
 	}
+
 	return otlptracegrpc.New(context.Background(), opts...)
 }
 
@@ -136,56 +160,94 @@ func createMetricExporter(endpoint string, secure bool, protocol string, headers
 }
 
 func createHTTPMetricExporter(endpoint string, secure bool, headers map[string]string) (sdkmetric.Exporter, error) {
+	endpoint = sanitizeEndpoint(endpoint, "http")
+
 	opts := []otlpmetrichttp.Option{
 		otlpmetrichttp.WithEndpoint(endpoint),
 	}
+
 	if !secure {
 		opts = append(opts, otlpmetrichttp.WithInsecure())
+	} else {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		opts = append(opts, otlpmetrichttp.WithTLSClientConfig(tlsConfig))
 	}
+
 	if len(headers) > 0 {
 		opts = append(opts, otlpmetrichttp.WithHeaders(headers))
 	}
+
 	return otlpmetrichttp.New(context.Background(), opts...)
 }
 
 func createGRPCMetricExporter(endpoint string, secure bool, headers map[string]string) (sdkmetric.Exporter, error) {
+	endpoint = sanitizeEndpoint(endpoint, "grpc")
+
 	opts := []otlpmetricgrpc.Option{
 		otlpmetricgrpc.WithEndpoint(endpoint),
-		otlpmetricgrpc.WithDialOption(grpc.WithBlock()),
 	}
+
 	if !secure {
 		opts = append(opts, otlpmetricgrpc.WithInsecure())
+	} else {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		opts = append(opts, otlpmetricgrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
+
 	if len(headers) > 0 {
 		opts = append(opts, otlpmetricgrpc.WithHeaders(headers))
 	}
+
 	return otlpmetricgrpc.New(context.Background(), opts...)
 }
 
 func createHTTPLogExporter(endpoint string, secure bool, headers map[string]string) (sdklog.Exporter, error) {
+	endpoint = sanitizeEndpoint(endpoint, "http")
+
 	opts := []otlploghttp.Option{
 		otlploghttp.WithEndpoint(endpoint),
 	}
+
 	if !secure {
 		opts = append(opts, otlploghttp.WithInsecure())
+	} else {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		opts = append(opts, otlploghttp.WithTLSClientConfig(tlsConfig))
 	}
+
 	if len(headers) > 0 {
 		opts = append(opts, otlploghttp.WithHeaders(headers))
 	}
+
 	return otlploghttp.New(context.Background(), opts...)
 }
 
 func createGRPCLogExporter(endpoint string, secure bool, headers map[string]string) (sdklog.Exporter, error) {
+	endpoint = sanitizeEndpoint(endpoint, "grpc")
+
 	opts := []otlploggrpc.Option{
 		otlploggrpc.WithEndpoint(endpoint),
-		otlploggrpc.WithDialOption(grpc.WithBlock()),
 	}
+
 	if !secure {
 		opts = append(opts, otlploggrpc.WithInsecure())
+	} else {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		opts = append(opts, otlploggrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
+
 	if len(headers) > 0 {
 		opts = append(opts, otlploggrpc.WithHeaders(headers))
 	}
+
 	return otlploggrpc.New(context.Background(), opts...)
 }
 
@@ -201,4 +263,16 @@ func CreateLogRecord(severity log.Severity, message string, attrs ...log.KeyValu
 	record.SetBody(log.StringValue(message))
 	record.AddAttributes(attrs...)
 	return record
+}
+
+// Helper function to clean endpoint based on protocol
+func sanitizeEndpoint(endpoint string, protocol string) string {
+	// Remove any scheme prefix
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+
+	// Remove any trailing slashes
+	endpoint = strings.TrimRight(endpoint, "/")
+
+	return endpoint
 }
