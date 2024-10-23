@@ -6,7 +6,9 @@
 
 Whilst the [OpenTelemetry Demo Application (Astronomy Shop)](https://github.com/open-telemetry/opentelemetry-demo) provides a comprehensive demonstration of OpenTelemetry features, it requires significant resources to run - including Kubernetes clusters and multiple Docker containers. `oteldemo` takes a different approach by providing a single, lightweight binary that demonstrates all the key features of OpenTelemetry instrumentation signals without the operational overhead.
 
-It simulates a social media application called "Chirper", generating synthetic telemetry data to showcase how OpenTelemetry can provide insights into complex, distributed systems. The simulation creates realistic patterns of traces, metrics, and logs that you would typically see in a production microservices environment, but without the need to deploy actual services.
+It simulates a fictionl social media application called **Chirper**, generating synthetic telemetry data to showcase how OpenTelemetry can provide insights into complex, distributed systems. The simulation creates realistic patterns of traces, metrics, and logs that you would typically see in a production microservices environment, but without the need to deploy actual services.
+
+All telemetry data starts with the `chirper` name. For example, each traces `service.name` value starts with `chirper.*`. Similarly, metrics and logs are prefixed with `chirper`.
 
 ## Features
 
